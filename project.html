@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foto Titik-Titik</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+// ====== PENGATURAN (silakan diubah) ======
+const FOTO       = "foto.jpg";
+const JARAK      = 5;     // jarak antar titik (px). Kecil = detail & berat, besar = ringan
+const UKURAN     = 2.4;   // ukuran tiap titik
+const KECEPATAN  = 0.01;  // kecepatan berkumpul (0.01 pelan – 0.08 cepat)
+const JEDA_MAKS  = 2500;  // titik mulai bergerak acak dalam rentang ini (ms)
+const RADIUS_MOUSE = 70;  // jangkauan tolakan mouse/sentuhan
+const BUANG_GELAP  = 0;   // 0 = semua piksel dipakai, 30–50 = buang piksel yang sangat gelap
+// =========================================
+
+let W, H, particles = [], mouse = { x: -9999, y: -9999 };
+let mulai = performance.now();
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+const img = new Image();
+img.onload = () => { resize(); bangunPartikel(); mulai = performance.now(); loop(); };
+img.onerror = () => alert("foto.jpg tidak ditemukan. Pastikan satu folder dengan index.html");
+img.src = FOTO;
+
+function bangunPartikel() {
+  particles = [];
+
+  // skala foto agar muat di layar (tinggi maks 90%, lebar maks 90%)
+  const skala = Math.min((W * 0.9) / img.width, (H * 0.9) / img.height);
+  const iw = Math.floor(img.width * skala);
+  const ih = Math.floor(img.height * skala);
+  const ox = (W - iw) / 2;
+  const oy = (H - ih) / 2;
+
+  // gambar foto ke kanvas tersembunyi untuk dibaca warnanya
+  const off = document.createElement("canvas");
+  off.width = iw; off.height = ih;
+  const octx = off.getContext("2d", { willReadFrequently: true });
+  octx.drawImage(img, 0, 0, iw, ih);
+  const data = octx.getImageData(0, 0, iw, ih).data;
+
+  for (let y = 0; y < ih; y += JARAK) {
+    for (let x = 0; x < iw; x += JARAK) {
+      const i = (y * iw + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+      if (a < 128) continue;
+      if ((r + g + b) / 3 < BUANG_GELAP) continue;
+
+      particles.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        tx: ox + x,
+        ty: oy + y,
+        vx: 0, vy: 0,
+        warna: `rgb(${r},${g},${b})`,
+        ease: KECEPATAN * (0.6 + Math.random() * 0.9),
+        jeda: Math.random() * JEDA_MAKS
+      });
+    }
+  }
+}
+
+function loop() {
+  const sekarang = performance.now() - mulai;
+
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, W, H);
+
+  for (const p of particles) {
+    if (sekarang >= p.jeda) {
+      // bergerak menuju posisi target
+      p.vx += (p.tx - p.x) * p.ease;
+      p.vy += (p.ty - p.y) * p.ease;
+    }
+
+    // tolakan dari mouse / jari
+    const dx = p.x - mouse.x;
+    const dy = p.y - mouse.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < RADIUS_MOUSE * RADIUS_MOUSE) {
+      const d = Math.sqrt(d2) || 1;
+      const gaya = (RADIUS_MOUSE - d) / RADIUS_MOUSE;
+      p.vx += (dx / d) * gaya * 6;
+      p.vy += (dy / d) * gaya * 6;
+    }
+
+    p.vx *= 0.82;   // gesekan
+    p.vy *= 0.82;
+    p.x += p.vx;
+    p.y += p.vy;
+
+    ctx.fillStyle = p.warna;
+    ctx.fillRect(p.x, p.y, UKURAN, UKURAN);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// interaksi mouse & sentuhan
+addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+addEventListener("mouseleave", () => { mouse.x = mouse.y = -9999; });
+addEventListener("touchmove", e => {
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY;
+}, { passive: true });
+addEventListener("touchend", () => { mouse.x = mouse.y = -9999; });
+
+// ulangi animasi saat layar diklik dua kali
+addEventListener("dblclick", () => {
+  for (const p of particles) {
+    p.x = Math.random() * W; p.y = Math.random() * H;
+    p.vx = p.vy = 0;
+  }
+  mulai = performance.now();
+});
+
+addEventListener("resize", () => {
+  if (!img.complete) return;
+  resize(); bangunPartikel(); mulai = performance.now();
+});
+</script>
+</body>
+</html>
